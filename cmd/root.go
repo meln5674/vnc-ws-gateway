@@ -4,11 +4,14 @@ Copyright © 2025 Andrew Melnick meln5674.5674@gmail.com
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 
 	"github.com/meln5674/vnc-ws-gateway/pkg/gateway"
@@ -40,10 +43,24 @@ var rootCmd = &cobra.Command{
 		}
 		defer passwordFile.Close()
 		slog.Info("listening", "addr", listenAddr)
-		return http.ListenAndServe(listenAddr, gateway.New(gateway.Config{
-			PasswordFile: passwordFile.Name(),
-			VNCArgs:      vncArgs,
-		}))
+
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer cancel()
+
+		srv := http.Server{
+			Handler: gateway.New(gateway.Config{
+				PasswordFile: passwordFile.Name(),
+				VNCArgs:      vncArgs,
+			}),
+			Addr:        listenAddr,
+			BaseContext: func(net.Listener) context.Context { return ctx },
+		}
+		go func() {
+			<-ctx.Done()
+			srv.Shutdown(context.Background())
+		}()
+
+		return srv.ListenAndServe()
 	},
 }
 

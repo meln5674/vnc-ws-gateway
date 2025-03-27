@@ -68,8 +68,19 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 	}
 	defer os.RemoveAll(tmpDir)
 
+	q := req.URL.Query()
+	width := q.Get("width")
+	height := q.Get("height")
+	geometry := fmt.Sprintf("%sx%s", width, height)
+
 	socketPath := filepath.Join(tmpDir, "vnc.sock")
-	args := append([]string{"-fg", "-rfbunixpath", socketPath, "-rfbauth", s.PasswordFile}, s.VNCArgs...)
+	args := append([]string{
+		"-fg",
+		"-rfbunixpath", socketPath,
+		"-rfbauth", s.PasswordFile,
+		"-geometry", geometry,
+	}, s.VNCArgs...,
+	)
 	vncServer := exec.Command("tigervncserver", args...)
 	vncServer.Stdout = os.Stdout
 	vncServer.Stderr = os.Stderr
@@ -81,12 +92,18 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 	defer vncServer.Process.Signal(os.Interrupt)
 
 	// TODO: Configurable
-	retries := 3
-	retryPeriod := 1 * time.Second
+	retries := 10
+	retryPeriod := 100 * time.Millisecond
 	var upstream net.Conn
 	for retry := range retries {
-		upstream, err = net.Dial("unix", socketPath)
-		if err == nil || retry == retries-1 {
+		_, err = os.Stat(socketPath)
+		if err == nil {
+			break
+		}
+		if retry == retries-1 {
+			err = fmt.Errorf("retries exhausted")
+		}
+		if !errors.Is(err, os.ErrNotExist) {
 			break
 		}
 		slog.Info("vnc server not ready yet", "error", err)
@@ -95,6 +112,11 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 	if err != nil {
 		http.Error(w, "timed out waiting for VNC server to start", http.StatusInternalServerError)
 		return fmt.Errorf("timed out waiting for VNC server to start: %w", err)
+	}
+	upstream, err = net.Dial("unix", socketPath)
+	if err != nil {
+		http.Error(w, "failed to connect to VNC server", http.StatusInternalServerError)
+		return fmt.Errorf("failed to connect to VNC server: %w", err)
 	}
 	slog.Info("Connected to VNC", "socket-path", socketPath)
 
