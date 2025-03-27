@@ -1,12 +1,12 @@
 all: bin/vnc-ws-gateway
 
 GO_FILES = $(shell find ./ -name '*.go' -not -name '*_test.go' -type f)
-STATIC_FILES = $(shell find ./pkg/gateway/static -type f)
+STATIC_FILES = $(shell find ./pkg/gateway/static -type f) pkg/gateway/static/js/novnc.js
 
 package-lock.json: package.json
 	npm i --package-lock-only
 
-pkg/ui/static/js/novnc.js: package-lock.json
+pkg/gateway/static/js/novnc.js: package-lock.json
 	npm ci
 	npm run build-novnc
 
