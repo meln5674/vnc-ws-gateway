@@ -1,0 +1,16 @@
+{
+  "name": "vnc-ws-gateway",
+  "version": "1.0.0",
+  "description": "This not a node.js package, but instead, just a container for js dependencies to bundle them into single files for embedding",
+  "scripts": {
+    "build-novnc": "esbuild ./node_modules/@novnc/novnc/lib/rfb.js --bundle --outfile=pkg/gateway/static/js/novnc.js --format=iife --global-name=novnc"
+  },
+  "author": "",
+  "license": "AGPL 3.0",
+  "dependencies": {
+    "@novnc/novnc": "1.5.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.1"
+  }
+}
