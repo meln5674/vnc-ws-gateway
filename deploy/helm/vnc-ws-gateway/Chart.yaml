@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vnc-ws-gateway
+description: Lightweight remote desktop for containers
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -30,6 +30,7 @@ Building this tool requires Golang and NPM. A pre-made environment for this task
 
 To build run `make bin/vnc-ws-gateway` . To compile statically (e.g. for see below), instead run `make bin/vnc-ws-gateway.static`
 
-## Example Dockerfile
+## Example Dockerfile and Helm Chart
 
-An example [Dockerfile](./Dockerfile) is provided which demonstrates the tool in an Ubuntu LTS environment with XFCE.
+An example [Dockerfile](./Dockerfile) and [Helm Chart](./deploy/helm/vnc-ws-gateway/) are provided which demonstrate the tool 
+in an Ubuntu LTS environment with XFCE.
