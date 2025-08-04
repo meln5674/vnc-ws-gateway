@@ -23,7 +23,10 @@ import (
 
 type Config struct {
 	PasswordFile string
+	VNCCmd       string
 	VNCArgs      []string
+	PollPeriod   time.Duration
+	PollRetries  int
 }
 
 type Server struct {
@@ -56,7 +59,7 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) homepage(ctx context.Context, w http.ResponseWriter, req *http.Request, _ map[string]string, _ error) error {
-	http.Redirect(w, req, "/static/html/index.html", http.StatusPermanentRedirect)
+	http.Redirect(w, req, "./static/html/index.html", http.StatusPermanentRedirect)
 	return nil
 }
 
@@ -66,7 +69,9 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 		http.Error(w, "could not create temp directory", http.StatusInternalServerError)
 		return fmt.Errorf("could not create temp directory: %w", err)
 	}
+	defer slog.Debug("remoted tmpdir", "remote", req.RemoteAddr, "tmpdir", "tmpdir")
 	defer os.RemoveAll(tmpDir)
+	slog.Debug("created tmpdir", "remote", req.RemoteAddr, "tmpdir", "tmpdir")
 
 	q := req.URL.Query()
 	width := q.Get("width")
@@ -81,9 +86,10 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 		"-geometry", geometry,
 	}, s.VNCArgs...,
 	)
-	vncServer := exec.Command("tigervncserver", args...)
+	vncServer := exec.Command(s.VNCCmd, args...)
 	vncServer.Stdout = os.Stdout
 	vncServer.Stderr = os.Stderr
+	slog.Info("starting vnc server", "cmd", s.VNCCmd, "args", args)
 	err = vncServer.Start()
 	if err != nil {
 		http.Error(w, "failed to start VNC", http.StatusInternalServerError)
@@ -92,22 +98,20 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 	defer vncServer.Process.Signal(os.Interrupt)
 
 	// TODO: Configurable
-	retries := 10
-	retryPeriod := 100 * time.Millisecond
 	var upstream net.Conn
-	for retry := range retries {
+	for retry := range s.PollRetries {
 		_, err = os.Stat(socketPath)
 		if err == nil {
 			break
 		}
-		if retry == retries-1 {
+		if retry == s.PollRetries-1 {
 			err = fmt.Errorf("retries exhausted")
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			break
 		}
-		slog.Info("vnc server not ready yet", "error", err)
-		time.Sleep(retryPeriod)
+		slog.Info("vnc server not ready yet", "remote", req.RemoteAddr, "error", err)
+		time.Sleep(s.PollPeriod)
 	}
 	if err != nil {
 		http.Error(w, "timed out waiting for VNC server to start", http.StatusInternalServerError)
@@ -118,7 +122,7 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 		http.Error(w, "failed to connect to VNC server", http.StatusInternalServerError)
 		return fmt.Errorf("failed to connect to VNC server: %w", err)
 	}
-	slog.Info("Connected to VNC", "socket-path", socketPath)
+	slog.Info("Connected to VNC", "remote", req.RemoteAddr, "socket-path", socketPath)
 
 	var upgrader websocket.Upgrader
 	conn, err := upgrader.Upgrade(w, req, nil)
@@ -126,7 +130,7 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 		return fmt.Errorf("failed to upgrade to websocket: %w", err)
 	}
 	defer func() {
-		slog.Info("stopping ws conn")
+		slog.Info("stopping ws conn", "remote", req.RemoteAddr)
 		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		conn.Close()
 	}()
@@ -148,7 +152,7 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 		defer downstream.Close()
 		var err error
 		var n int64
-		defer func() { slog.Info("done copying to downstream", "n", n, "error", err) }()
+		defer func() { slog.Info("done copying to downstream", "remote", req.RemoteAddr, "n", n, "error", err) }()
 		n, err = io.Copy(downstream, upstream)
 	}()
 	done.Add(1)
@@ -157,7 +161,7 @@ func (s *Server) vnc(ctx context.Context, w http.ResponseWriter, req *http.Reque
 		defer closeUpstream()
 		var err error
 		var n int64
-		defer func() { slog.Info("done copying to upstream", "n", n, "error", err) }()
+		defer func() { slog.Info("done copying to upstream", "remote", req.RemoteAddr, "n", n, "error", err) }()
 		n, err = io.Copy(upstream, downstream)
 	}()
 	done.Wait()

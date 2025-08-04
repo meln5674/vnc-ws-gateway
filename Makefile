@@ -14,4 +14,15 @@ bin/vnc-ws-gateway: $(GO_FILES) $(STATIC_FILES)
 	go build -o $@
 
 bin/vnc-ws-gateway.static: $(GO_FILES) $(STATIC_FILES)
+	CGO_ENABLED=0 GOOS=linux go build -a -tags netgo,osusergo -ldflags '-w -extldflags "-static"' -o $@
+
+bin/vnc-ws-gateway.amd64.static: $(GO_FILES) $(STATIC_FILES)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo,osusergo -ldflags '-w -extldflags "-static"' -o $@
+
+bin/vnc-ws-gateway.arm64.static: $(GO_FILES) $(STATIC_FILES)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -tags netgo,osusergo -ldflags '-w -extldflags "-static"' -o $@
+
+.PHONY: test
+test: bin/vnc-ws-gateway
+	# Flakes because chromedp has a race-condition in its shutdown
+	go tool ginkgo -v

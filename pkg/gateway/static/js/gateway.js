@@ -27,7 +27,7 @@ function envVNC(vncID) {
     const vncHost = document.getElementById(vncID)
     const proto = window.location.protocol == "http:" ? "ws" : "wss";
     const host = window.location.host;
-    const path = '/api/v1/vnc';
+    const path = new URL('../../api/v1/vnc', window.location.href).pathname;
     // const query = `?width=${screen.width}&height=${screen.height}`
     const query = `?width=${width}&height=${height}`
     const wsURL = `${proto}://${host}${path}${query}`;

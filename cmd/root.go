@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/meln5674/vnc-ws-gateway/pkg/gateway"
 	"github.com/spf13/cobra"
@@ -20,8 +22,9 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "vnc-ws-gateway",
-	Short: "Simple remote desktop using VNC over Websockets",
+	Use:          "vnc-ws-gateway",
+	Short:        "Simple remote desktop using VNC over Websockets",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		password := os.Getenv("VNC_WS_GATEWAY_PASSWORD")
 		if password == "" {
@@ -44,20 +47,32 @@ var rootCmd = &cobra.Command{
 		defer passwordFile.Close()
 		slog.Info("listening", "addr", listenAddr)
 
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		srvCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer cancel()
+
+		handlerCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 		defer cancel()
 
 		srv := http.Server{
 			Handler: gateway.New(gateway.Config{
 				PasswordFile: passwordFile.Name(),
+				VNCCmd:       vncCmd,
 				VNCArgs:      vncArgs,
+				PollPeriod:   vncPollPeriod,
+				PollRetries:  vncPollRetries,
 			}),
 			Addr:        listenAddr,
-			BaseContext: func(net.Listener) context.Context { return ctx },
+			BaseContext: func(net.Listener) context.Context { return srvCtx },
 		}
 		go func() {
-			<-ctx.Done()
+			<-srvCtx.Done()
+			slog.Info("SIGINT received, shutting down")
 			srv.Shutdown(context.Background())
+		}()
+		go func() {
+			<-handlerCtx.Done()
+			slog.Info("SIGTERM received, forcibly shutting down")
+			srv.Close()
 		}()
 
 		return srv.ListenAndServe()
@@ -74,11 +89,17 @@ func Execute() {
 }
 
 var (
-	listenAddr string
-	vncArgs    []string
+	listenAddr     string
+	vncPollPeriod  time.Duration
+	vncPollRetries int
+	vncCmd         string
+	vncArgs        []string
 )
 
 func init() {
 	rootCmd.Flags().StringVar(&listenAddr, "listen", "127.0.0.1:8080", "Address:port to listen on")
+	rootCmd.Flags().DurationVar(&vncPollPeriod, "vnc-poll-period", 100*time.Millisecond, "Time to wait between checks for the VNC server to start listening on its socket")
+	rootCmd.Flags().IntVar(&vncPollRetries, "vnc-poll-retries", 10, "Number of retries when dialing VNC server before giving up and reporting and error")
+	rootCmd.Flags().StringVar(&vncCmd, "vnc-cmd", "tigervncserver", "VNC server command")
 	rootCmd.Flags().StringSliceVar(&vncArgs, "vnc-args", []string{}, "Extra arguments to VNC server")
 }
