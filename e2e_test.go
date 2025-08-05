@@ -104,16 +104,17 @@ var _ = Describe("gateway", func() {
 
 	It("should launch a VNC session in the browser when proxied at a subpath", func() {
 
-		rootPath := "/a/root/subpath"
+		rootPath := "/a/root/subpath/"
 		proxy := httptest.NewServer(&httputil.ReverseProxy{
 			Rewrite: func(req *httputil.ProxyRequest) {
+				defer GinkgoRecover()
 				url := *req.In.URL
 				url.Scheme = "http"
 				url.Host = "localhost:8080"
 				slog.Info("???", "path", url.Path, "prefix", rootPath, "trimmed", strings.TrimPrefix(url.Path, rootPath))
 				url.Path = strings.TrimPrefix(url.Path, rootPath)
-				if url.Path == "" {
-					url.Path = "/"
+				if !strings.HasPrefix(url.Path, "/") {
+					url.Path = "/" + url.Path
 				}
 				req.Out.URL = &url
 				slog.Info("proxying", "in", req.In.URL, "out", req.Out.URL, "url", &url)

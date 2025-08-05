@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,7 +61,20 @@ func (s *Server) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func (s *Server) homepage(ctx context.Context, w http.ResponseWriter, req *http.Request, _ map[string]string, _ error) error {
-	http.Redirect(w, req, "./static/html/index.html", http.StatusPermanentRedirect)
+	// We can't use this, becuse the go http library will convert it to an absolute path,
+	// and that breaks serving this from a subpath
+	// http.Redirect(w, req, "./static/html/index.html", http.StatusPermanentRedirect)
+
+	var redirect string
+	if strings.HasSuffix(req.URL.Path, "/") {
+		_, tail := path.Split(req.URL.Path)
+		redirect = "./" + path.Join(tail, "static/html/index.html")
+	} else {
+		redirect = "./static/html/index.html"
+	}
+	slog.Info("redirect", "from", req.URL, "to", redirect)
+	w.Header().Set("Location", redirect)
+	w.WriteHeader(http.StatusPermanentRedirect)
 	return nil
 }
 

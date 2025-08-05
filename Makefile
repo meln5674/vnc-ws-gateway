@@ -24,5 +24,4 @@ bin/vnc-ws-gateway.arm64.static: $(GO_FILES) $(STATIC_FILES)
 
 .PHONY: test
 test: bin/vnc-ws-gateway
-	# Flakes because chromedp has a race-condition in its shutdown
 	go tool ginkgo -v
